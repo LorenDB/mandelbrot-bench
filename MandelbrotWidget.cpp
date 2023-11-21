@@ -60,6 +60,8 @@ void MandelbrotWidget::setView(FractalView view)
 
 void MandelbrotWidget::rerender()
 {
+    m_doneRendering = false;
+    m_debugLabel->setText({});
     auto renderJob = QtConcurrent::run([this] {
         QPainter painter(&m_pixmap);
 
@@ -208,7 +210,8 @@ void MandelbrotWidget::paintEvent(QPaintEvent *)
     if (m_doneRendering)
     {
         painter.drawPixmap(0, 0, m_pixmap);
-        painter.fillRect(10, 10, m_debugLabel->width() + 20, m_debugLabel->height() + 20, qApp->palette().base());
+        if (!m_debugLabel->text().isEmpty())
+            painter.fillRect(10, 10, m_debugLabel->width() + 20, m_debugLabel->height() + 20, qApp->palette().base());
     }
     else
         painter.fillRect(rect(), qApp->palette().base());
