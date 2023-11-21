@@ -187,8 +187,9 @@ void MandelbrotWidget::rerender()
             break;
         }
 
-        m_debugLabel->setText(QStringLiteral("%1\n%2 ns\n%3 ms\n%4 s")
+        m_debugLabel->setText(QStringLiteral("%1\n%2x%2 px\n%3 ns\n%4 ms\n%5 s")
                                   .arg(timeText,
+                                       QString::number(m_size),
                                        QString::number(time.count()),
                                        QString::number((double)time.count() / 1000000),
                                        QString::number((double)time.count() / 1000000000)));
