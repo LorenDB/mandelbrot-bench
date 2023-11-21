@@ -118,19 +118,19 @@ void MandelbrotWidget::rerender()
         {
             try
             {
-                BOOST_COMPUTE_FUNCTION(int, calculateMandelbrotCompute, (std::pair<double, double> c), {
-                    if (sqrt(c.first * c.first + c.second * c.second) > 2)
+                BOOST_COMPUTE_FUNCTION(int, calculateMandelbrotCompute, (std::complex<double> c), {
+                    if (sqrt(c.x * c.x + c.y * c.y) > 2)
                         return 1;
                     else
                     {
-                        _pair_double_double_t zSquaredPlusC = c;
+                        double2 zSquaredPlusC = c;
                         for (int i = 0; i < 100; ++i)
                         {
-                            _pair_double_double_t newzc;
-                            newzc.first = (zSquaredPlusC.first * zSquaredPlusC.first) - (zSquaredPlusC.second * zSquaredPlusC.second) + c.first;
-                            newzc.second = (2 * zSquaredPlusC.first * zSquaredPlusC.second) + c.second;
+                            double2 newzc;
+                            newzc.x = (zSquaredPlusC.x * zSquaredPlusC.x) - (zSquaredPlusC.y * zSquaredPlusC.y) + c.x;
+                            newzc.y = (2 * zSquaredPlusC.x * zSquaredPlusC.y) + c.y;
                             zSquaredPlusC = newzc;
-                            if (((zSquaredPlusC.first * zSquaredPlusC.first) + (zSquaredPlusC.second * zSquaredPlusC.second)) > 4)
+                            if (((zSquaredPlusC.x * zSquaredPlusC.x) + (zSquaredPlusC.y * zSquaredPlusC.y)) > 4)
                                 return i + 1;
                         }
                         return 0;
@@ -139,17 +139,17 @@ void MandelbrotWidget::rerender()
 
                 // Since the points need transformed to a new storage type, we'll do that on CPU as it takes a long time to
                 // manually copy values one by one to the GPU
-                std::vector<std::pair<double, double>> tempPoints;
+                std::vector<std::complex<double>> tempPoints;
                 for (const auto &p : points)
-                    tempPoints.push_back({p.second.real(), p.second.imag()});
+                    tempPoints.push_back(p.second);
 
-                compute::vector<std::pair<double, double>> points_compute(tempPoints.size());
+                compute::vector<std::complex<double>> points_compute(tempPoints.size());
                 compute::copy(tempPoints.begin(), tempPoints.end(), points_compute.begin());
 
-                compute::vector<double> results_compute(points_compute.size());
+                compute::vector<int> results_compute(points_compute.size());
                 compute::transform(points_compute.begin(), points_compute.end(), results_compute.begin(), calculateMandelbrotCompute);
 
-                std::vector<double> results(points_compute.size());
+                std::vector<int> results(points_compute.size());
                 compute::copy(results_compute.begin(), results_compute.end(), results.begin());
 
                 for (int i = 0; i < results.size() && i < points.size(); ++i)
