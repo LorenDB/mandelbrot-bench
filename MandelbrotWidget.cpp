@@ -70,8 +70,8 @@ void MandelbrotWidget::rerender()
     auto renderJob = QtConcurrent::run(threadPool, [this] {
         QPainter painter(&m_pixmap);
 
-        using AllDataType = std::pair<std::pair<int, int>, std::complex<double>>;
-        std::vector<AllDataType> points;
+        std::vector<QPoint> pixels;
+        std::vector<std::complex<double>> points;
         for (int row = 0; row < m_size; ++row)
         {
             for (int col = 0; col < m_size; ++col)
@@ -79,48 +79,27 @@ void MandelbrotWidget::rerender()
                 switch (m_view)
                 {
                 case MandelbrotWidget::FractalView::EntireSet:
-                    points.push_back({{row, col}, {-2.5 + (4.0 * row / m_size), -2.0 + (4.0 * col / m_size)}});
+                    points.push_back({-2.5 + (4.0 * row / m_size), -2.0 + (4.0 * col / m_size)});
                     break;
                 case MandelbrotWidget::FractalView::LeftSpike:
-                    points.push_back({{row, col}, {-1.7 + (0.25 * row / m_size), -0.125 + (0.25 * col / m_size)}});
+                    points.push_back({-1.7 + (0.25 * row / m_size), -0.125 + (0.25 * col / m_size)});
                     break;
                 }
+                pixels.push_back({row, col});
             }
         }
+        std::vector<int> results(points.size());
 
         QElapsedTimer timer;
         timer.start();
         if (m_renderType == RenderType::CpuSingleThread)
-        {
-            for (const auto &point : points)
-            {
-                const auto result = calculateMandelbrot(point.second);
-                if (result == 0)
-                    painter.setPen(QPen{QColor{0, 0, 0}});
-                else
-                    painter.setPen(QPen{QColor{255 - std::min(static_cast<int>(255 / result / 4), 255),
-                                               255 - std::min(static_cast<int>(255 / result / 0.8) + 50, 255),
-                                               255 - std::min(static_cast<int>(255 / result / 0.8) + 50, 255)}});
-                painter.drawPoint(point.first.first, point.first.second);
-            }
-        }
+            for (int i = 0; i < points.size(); ++i)
+                results[i] = calculateMandelbrot(points[i]);
         else if (m_renderType == RenderType::CpuMultiThread)
-        {
-            auto results =
-                QtConcurrent::blockingMapped(points, [](const AllDataType &point) -> std::pair<std::pair<int, int>, int> {
-                    return {point.first, calculateMandelbrot(point.second)};
+            results =
+                QtConcurrent::blockingMapped(points, [](const std::complex<double> &point) -> int {
+                    return calculateMandelbrot(point);
                 });
-            for (const auto result : results)
-            {
-                if (result.second == 0)
-                    painter.setPen(QPen{QColor{0, 0, 0}});
-                else
-                    painter.setPen(QPen{QColor{255 - std::min(static_cast<int>(255 / result.second / 0.8) + 50, 255),
-                                               255 - std::min(static_cast<int>(255 / result.second / 4) + 50, 255),
-                                               255 - std::min(static_cast<int>(255 / result.second / 0.8) + 50, 255)}});
-                painter.drawPoint(result.first.first, result.first.second);
-            }
-        }
         else if (m_renderType == RenderType::Gpu)
         {
             try
@@ -144,31 +123,13 @@ void MandelbrotWidget::rerender()
                     }
                 });
 
-                // Since the points need transformed to a new storage type, we'll do that on CPU as it takes a long time to
-                // manually copy values one by one to the GPU
-                std::vector<std::complex<double>> tempPoints;
-                for (const auto &p : points)
-                    tempPoints.push_back(p.second);
-
-                compute::vector<std::complex<double>> points_compute(tempPoints.size());
-                compute::copy(tempPoints.begin(), tempPoints.end(), points_compute.begin());
+                compute::vector<std::complex<double>> points_compute(points.size());
+                compute::copy(points.begin(), points.end(), points_compute.begin());
 
                 compute::vector<int> results_compute(points_compute.size());
                 compute::transform(points_compute.begin(), points_compute.end(), results_compute.begin(), calculateMandelbrotCompute);
 
-                std::vector<int> results(points_compute.size());
                 compute::copy(results_compute.begin(), results_compute.end(), results.begin());
-
-                for (int i = 0; i < results.size() && i < points.size(); ++i)
-                {
-                    if (results[i] == 0)
-                        painter.setPen(QPen{QColor{0, 0, 0}});
-                    else
-                        painter.setPen(QPen{QColor{255 - std::min(static_cast<int>(255 / results[i] / 0.8) + 50, 255),
-                                                   255 - std::min(static_cast<int>(255 / results[i] / 0.8) + 50, 255),
-                                                   255 - std::min(static_cast<int>(255 / results[i] / 4) + 50, 255)}});
-                    painter.drawPoint(points[i].first.first, points[i].first.second);
-                }
             }
             catch (const boost::wrapexcept<boost::compute::program_build_failure> &f)
             {
@@ -201,6 +162,37 @@ void MandelbrotWidget::rerender()
                                        QString::number((double)time.count() / 1000000),
                                        QString::number((double)time.count() / 1000000000)));
         m_debugLabel->resize(m_debugLabel->sizeHint());
+
+        for (int i = 0; i < results.size(); ++i)
+        {
+            if (results[i] == 0)
+                painter.setPen(QPen{QColor{0, 0, 0}});
+            else
+            {
+                switch (m_renderType)
+                {
+                case RenderType::CpuSingleThread:
+                    painter.setPen(QPen{QColor{255 - std::min(static_cast<int>(255 / results[i] / 4), 255),
+                                               255 - std::min(static_cast<int>(255 / results[i] / 0.8) + 50, 255),
+                                               255 - std::min(static_cast<int>(255 / results[i] / 0.8) + 50, 255)}});
+                    break;
+                case RenderType::CpuMultiThread:
+                    painter.setPen(QPen{QColor{255 - std::min(static_cast<int>(255 / results[i]/ 0.8) + 50, 255),
+                                               255 - std::min(static_cast<int>(255 / results[i]/ 4) + 50, 255),
+                                               255 - std::min(static_cast<int>(255 / results[i]/ 0.8) + 50, 255)}});
+                    break;
+                case RenderType::Gpu:
+                    painter.setPen(QPen{QColor{255 - std::min(static_cast<int>(255 / results[i] / 0.8) + 50, 255),
+                                               255 - std::min(static_cast<int>(255 / results[i] / 0.8) + 50, 255),
+                                               255 - std::min(static_cast<int>(255 / results[i] / 4) + 50, 255)}});
+                    break;
+                }
+
+            }
+
+            painter.drawPoint(pixels[i]);
+        }
+
         m_doneRendering = true;
         emit doneRendering();
         update();
