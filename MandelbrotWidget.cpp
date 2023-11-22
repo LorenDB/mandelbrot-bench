@@ -62,7 +62,12 @@ void MandelbrotWidget::rerender()
 {
     m_doneRendering = false;
     m_debugLabel->setText({});
-    auto renderJob = QtConcurrent::run([this] {
+
+    // we're using a dedicated thread pool for this lambda because it doesn't actually consume a significant amount of CPU;
+    // therefore, it can coexist with a render thread on the same core
+    static auto threadPool = new QThreadPool{this};
+    threadPool->setMaxThreadCount(3);
+    auto renderJob = QtConcurrent::run(threadPool, [this] {
         QPainter painter(&m_pixmap);
 
         using AllDataType = std::pair<std::pair<int, int>, std::complex<double>>;
